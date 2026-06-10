@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#1db954">
+    <title>SoundSpot - Tu banco de audios rápidos</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            transition: background 0.2s, color 0.2s;
+        }
+        body {
+            background: #121212;
+            color: #eee;
+            margin: 0;
+            padding: 16px;
+            padding-bottom: 100px;
+        }
+        body.light {
+            background: #f5f5f5;
+            color: #111;
+        }
+        body.light .audio-card, body.light .admin-panel, body.light .playlist-panel {
+            background: #fff;
+            border: 1px solid #ddd;
+            color: #111;
+        }
+        body.light button.secondary {
+            background: #ddd;
+            color: black;
+        }
+        body.light input, body.light textarea {
+            background: #fff;
+            color: #000;
+            border: 1px solid #aaa;
+        }
+        body.light .player-bar {
+            background: #e0e0e0;
+            color: black;
+        }
+        h1, h2, h3 {
+            color: #1db954;
+        }
+        button, .button-like {
+            background: #1db954;
+            border: none;
+            color: black;
+            font-weight: bold;
+            padding: 8px 14px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 0.9rem;
+        }
+        button.secondary {
+            background: #333;
+            color: white;
+        }
+        button.danger {
+            background: #b91d2c;
+            color: white;
+        }
+        input, textarea, select {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            width: 100%;
+            margin: 6px 0;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .audio-card {
+            background: #1e1e1e;
+            border-radius: 16px;
+            padding: 10px;
+            text-align: center;
+            border: 1px solid #2c2c2c;
+        }
+        .audio-card img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 12px;
+            background: #333;
+        }
+        .player-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #0a0a0a;
+            border-top: 2px solid #1db954;
+            padding: 12px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        .player-controls button {
+            background: #333;
+            font-size: 1rem;
+            margin: 0 4px;
+        }
+        .active-audio {
+            font-size: 0.8rem;
+            max-width: 200px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        .tabs {
+            display: flex;
+            gap: 12px;
+            border-bottom: 1px solid #333;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background: none;
+            border-radius: 0;
+            color: #ccc;
+        }
+        .tab.active {
+            color: #1db954;
+            border-bottom: 2px solid #1db954;
+        }
+        .admin-panel, .playlist-panel {
+            background: #1e1e2a;
+            border-left: 4px solid #ffaa00;
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+        }
+        .hidden-audio {
+            opacity: 0.6;
+            filter: grayscale(0.3);
+            background: #2a1e1e;
+        }
+        .flex {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .badge {
+            background: #444;
+            border-radius: 40px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+        }
+        .theme-toggle {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: #1db954;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            font-size: 24px;
+            z-index: 1100;
+            cursor: pointer;
+            border: none;
+        }
+        .change-pwd-btn {
+            position: fixed;
+            bottom: 90px;
+            right: 16px;
+            background: #ffaa00;
+            color: black;
+            z-index: 1100;
+            font-size: 12px;
+            padding: 8px 12px;
+            border-radius: 30px;
+            cursor: pointer;
+            border: none;
+            font-weight: bold;
+        }
+        .denied {
+            background: #b91d2c;
+            padding: 20px;
+            border-radius: 16px;
+            text-align: center;
+        }
+        @media (max-width: 600px) {
+            .grid {
+                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+
+<button class="theme-toggle" id="themeToggle">🌓</button>
+<button class="change-pwd-btn" id="changePwdBtn" style="display:none;">🔐 Cambiar contraseña</button>
+<h1>🎧 SoundSpot</h1>
+<div class="flex" style="justify-content: space-between;">
+    <div class="tabs">
+        <div class="tab active" data-tab="explore">🌍 Explorar</div>
+        <div class="tab" data-tab="gallery">🖼️ Galería</div>
+        <div class="tab" data-tab="myAudios">👤 Mis audios</div>
+        <div class="tab" data-tab="playlists">📁 Playlists</div>
+        <div class="tab" data-tab="admin">⚙️ Admin</div>
+    </div>
+    <button id="uploadBtn" style="background:#2c2c2c;">+ Subir audio</button>
+</div>
+
+<input type="text" id="globalSearch" placeholder="🔍 Buscar por nombre de audio..." style="margin: 10px 0;">
+
+<div id="contentArea"></div>
+
+<div class="player-bar" id="playerBar">
+    <div class="active-audio" id="nowPlayingText">Ningún audio</div>
+    <div class="player-controls">
+        <button id="randomBtn" title="Aleatorio">🎲 Random</button>
+        <button id="speedBtn" title="Velocidad x2">2x</button>
+        <button id="rewindBtn" title="Atrasar 10s">⏪ -10</button>
+        <button id="playPauseBtn">▶️ Play</button>
+        <button id="forwardBtn" title="Adelantar 10s">+10 ⏩</button>
+        <button id="reverseBtn" title="Reversa">🔄 Reversa</button>
+        <button id="restartBtn" title="Reiniciar">⏮️ Reiniciar</button>
+        <button id="nextBtn" title="Siguiente">⏭️ Sig</button>
+        <button id="prevBtn" title="Anterior (doble click)">⏪ Ant</button>
+    </div>
+</div>
+
+<script>
+    // ========== SISTEMA DE CONTRASEÑA ==========
+    async function hashPassword(password) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    
+    async function getStoredPasswordHash() {
+        let storedHash = localStorage.getItem('adminPasswordHash');
+        if (!storedHash) {
+            const defaultHash = await hashPassword('admin123');
+            localStorage.setItem('adminPasswordHash', defaultHash);
+            return defaultHash;
+        }
+        return storedHash;
+    }
+    
+    async function verifyPassword(inputPassword) {
+        const inputHash = await hashPassword(inputPassword);
+        const storedHash = await getStoredPasswordHash();
+        return inputHash === storedHash;
+    }
+    
+    async function changePassword(newPassword) {
+        const newHash = await hashPassword(newPassword);
+        localStorage.setItem('adminPasswordHash', newHash);
+        adminAuthorized = false;
+        document.getElementById('changePwdBtn').style.display = 'none';
+        alert("✅ Contraseña cambiada. Vuelve a iniciar sesión en Admin.");
+    }
+    
+    let adminAuthorized = false;
+    
+    async function checkAdminAuth() {
+        if (adminAuthorized) return true;
+        const password = prompt("🔐 Contraseña de administrador:");
+        if (!password) return false;
+        if (await verifyPassword(password)) {
+            adminAuthorized = true;
+            document.getElementById('changePwdBtn').style.display = 'block';
+            return true;
+        }
+        alert("❌ Contraseña incorrecta");
+        return false;
+    }
+    
+    function logoutAdmin() {
+        adminAuthorized = false;
+        document.getElementById('changePwdBtn').style.display = 'none';
+        renderCurrentView();
+        alert("Sesión cerrada");
+    }
+    
+    // ========== INDEXEDDB ==========
+    const DB_NAME = 'SoundSpotDB';
+    const DB_VERSION = 5;
+    let db = null;
+    const MI_ID = "usuario_" + (localStorage.getItem('userId') || Math.random().toString(36).substr(2, 8));
+    localStorage.setItem('userId', MI_ID);
+    
+    function openDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                db = request.result;
+                resolve(db);
+            };
+            request.onupgradeneeded = (e) => {
+                const dbRef = e.target.result;
+                if (!dbRef.objectStoreNames.contains('audios')) {
+                    const audioStore = dbRef.createObjectStore('audios', { keyPath: 'id' });
+                    audioStore.createIndex('creador', 'creador');
+                }
+                if (!dbRef.objectStoreNames.contains('playlists')) {
+                    dbRef.createObjectStore('playlists', { keyPath: 'id' });
+                }
+                if (!dbRef.objectStoreNames.contains('imagenes')) {
+                    dbRef.createObjectStore('imagenes', { keyPath: 'audioId' });
+                }
+                if (!dbRef.objectStoreNames.contains('audiosBlob')) {
+                    dbRef.createObjectStore('audiosBlob', { keyPath: 'audioId' });
+                }
+            };
+        });
+    }
+    
+    async function guardarAudio(audioFile, imageFile, nombre) {
+        const audioId = Date.now() + Math.random() * 10000;
+        const tx = db.transaction(['audios', 'imagenes', 'audiosBlob'], 'readwrite');
+        tx.objectStore('audios').add({
+            id: audioId, nombre, creador: MI_ID,
+            fecha: new Date().toISOString(), denuncias: 0, oculto: false, pendienteRevision: false
+        });
+        if (imageFile) tx.objectStore('imagenes').add({ audioId, blob: imageFile });
+        tx.objectStore('audiosBlob').add({ audioId, blob: audioFile });
+        await tx.done;
+        renderCurrentView();
+    }
+    
+    async function obtenerAudios() {
+        const tx = db.transaction('audios', 'readonly');
+        const audios = await new Promise(resolve => {
+            const req = tx.objectStore('audios').getAll();
+            req.onsuccess = () => resolve(req.result || []);
+        });
+        return audios.sort((a,b) => b.id - a.id);
+    }
+    
+    async function obtenerImagenUrl(audioId) {
+        const tx = db.transaction('imagenes', 'readonly');
+        const record = await new Promise(resolve => {
+            const req = tx.objectStore('imagenes').get(audioId);
+            req.onsuccess = () => resolve(req.result);
+        });
+        if (record?.blob) return URL.createObjectURL(record.blob);
+        return 'https://picsum.photos/200/200?random=' + audioId;
+    }
+    
+    async function obtenerAudioUrl(audioId) {
+        const tx = db.transaction('audiosBlob', 'readonly');
+        const record = await new Promise(resolve => {
+            const req = tx.objectStore('audiosBlob').get(audioId);
+            req.onsuccess = () => resolve(req.result);
+        });
+        if (record?.blob) return URL.createObjectURL(record.blob);
+        return null;
+    }
+    
+    async function denunciarAudio(audioId) {
+        const tx = db.transaction('audios', 'readwrite');
+        const store = tx.objectStore('audios');
+        const audio = await new Promise(resolve => {
+            const req = store.get(audioId);
+            req.onsuccess = () => resolve(req.result);
+        });
+        if (audio) {
+            audio.denuncias++;
+            if (audio.denuncias >= 50) { audio.oculto = true; audio.pendienteRevision = true; }
+            store.put(audio);
+        }
+        await tx.done;
+        renderCurrentView();
+    }
+    
+    async function revisionAdmin(audioId, restaurar) {
+        const tx = db.transaction(['audios', 'imagenes', 'audiosBlob'], 'readwrite');
+        const audioStore = tx.objectStore('audios');
+        const audio = await new Promise(resolve => {
+            const req = audioStore.get(audioId);
+            req.onsuccess = () => resolve(req.result);
+        });
+        if (audio) {
+            if (restaurar) {
+                audio.oculto = false; audio.pendienteRevision = false; audio.denuncias = 0;
+                audioStore.put(audio);
+            } else {
+                audioStore.delete(audioId);
+                tx.objectStore('imagenes').delete(audioId);
+                tx.objectStore('audiosBlob').delete(audioId);
+                const plTx = db.transaction('playlists', 'readwrite');
+                const plStore = plTx.objectStore('playlists');
+                const playlists = await new Promise(resolve => {
+                    const req = plStore.getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                });
+                for (let pl of playlists) {
+                    if (pl.audiosIds?.includes(audioId)) {
+                        pl.audiosIds = pl.audiosIds.filter(id => id !== audioId);
+                        plStore.put(pl);
+                    }
+                }
+                await plTx.done;
+            }
+        }
+        await tx.done;
+        renderCurrentView();
+    }
+    
+    async function borrarMiAudio(audioId) {
+        if (!confirm("¿Borrar permanentemente?")) return;
+        const tx = db.transaction(['audios', 'imagenes', 'audiosBlob'], 'readwrite');
+        tx.objectStore('audios').delete(audioId);
+        tx.objectStore('imagenes').delete(audioId);
+        tx.objectStore('audiosBlob').delete(audioId);
+        await tx.done;
+        renderCurrentView();
+    }
+    
+    // Playlists
+    async function crearPlaylist(nombre) {
+        const tx = db.transaction('playlists', 'readwrite');
+        tx.objectStore('playlists').add({ id: Date.now(), nombre, audiosIds: [] });
+        await tx.done;
+        renderCurrentView();
+    }
+    
+    async function obtenerPlaylists() {
+        const tx = db.transaction('playlists', 'readonly');
+        return await new Promise(resolve => {
+            const req = tx.objectStore('playlists').getAll();
+            req.onsuccess = () => resolve(req.result || []);
+        });
+    }
+    
+    async function agregarAPlaylist(playlistId, audioId) {
+        const tx = db.transaction('playlists', 'readwrite');
+        const store = tx.objectStore('playlists');
+        const pl = await new Promise(resolve => {
+            const req = store.get(playlistId);
+            req.onsuccess = () => resolve(req.result);
+        });
+        if (pl && !pl.audiosIds.includes(audioId)) {
+            pl.audiosIds.push(audioId);
+            store.put(pl);
+        }
+        await tx.done;
+        renderCurrentView();
+    }
+    
+    async function exportarPlaylists() {
+        const playlists = await obtenerPlaylists();
+        const blob = new Blob([JSON.stringify(playlists, null, 2)], {type: 'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'soundspot_playlists.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+    
+    async function importarPlaylists(file) {
+        const text = await file.text();
+        const playlists = JSON.parse(text);
+        const tx = db.transaction('playlists', 'readwrite');
+        const store = tx.objectStore('playlists');
+        for (let pl of playlists) {
+            if (!pl.id) pl.id = Date.now() + Math.random();
+            if (!pl.audiosIds) pl.audiosIds = [];
+            store.put(pl);
+        }
+        await tx.done;
+        renderCurrentView();
+    }
+    
+    // ========== REPRODUCTOR ==========
+    let currentAudio = null;
+    let currentId = null;
+    let queue = [];
+    let queueIdx = -1;
+    
+    async function playAudio(id, queueArr = null, idx = -1) {
+        if (currentAudio) { currentAudio.pause(); currentAudio.src = ''; }
+        const url = await obtenerAudioUrl(id);
+        if (!url) return;
+        currentAudio = new Audio(url);
+        currentId = id;
+        if (queueArr) { queue = queueArr; queueIdx = idx; }
+        const nombre = (await obtenerAudios()).find(a => a.id === id)?.nombre || 'audio';
+        document.getElementById('nowPlayingText').innerText = `🎵 ${nombre}`;
+        currentAudio.play();
+        document.getElementById('playPauseBtn').innerHTML = '⏸️ Pausa';
+        currentAudio.onended = () => {
+            document.getElementById('playPauseBtn').innerHTML = '▶️ Play';
+            if (queue.length && queueIdx+1 < queue.length) siguiente();
+        };
+    }
+    
+    function pausaPlay() {
+        if (!currentAudio) return;
+        if (currentAudio.paused) { currentAudio.play(); document.getElementById('playPauseBtn').innerHTML = '⏸️ Pausa'; }
+        else { currentAudio.pause(); document.getElementById('playPauseBtn').innerHTML = '▶️ Play'; }
+    }
+    function cambiarVelocidad() {
+        if (!currentAudio) return;
+        currentAudio.playbackRate = currentAudio.playbackRate === 2 ? 1 : 2;
+        document.getElementById('speedBtn').innerText = currentAudio.playbackRate === 2 ? '1x' : '2x';
+    }
+    function adelantar() { if(currentAudio) currentAudio.currentTime += 10; }
+    function atrasar() { if(currentAudio) currentAudio.currentTime -= 10; }
+    function reiniciar() { if(currentAudio) currentAudio.currentTime = 0; }
+    function reversa() { alert("Modo reversa no soportado nativamente"); }
+    async function aleatorio() {
+        const audios = await obtenerAudios();
+        const disponibles = audios.filter(a => !a.oculto);
+        if (disponibles.length) playAudio(disponibles[Math.floor(Math.random() * disponibles.length)].id);
+        else alert("No hay audios");
+    }
+    let dobleClick = null;
+    function anterior() {
+        if (dobleClick) {
+            clearTimeout(dobleClick);
+            dobleClick = null;
+            if (queue.length && queueIdx-1 >= 0) playAudio(queue[queueIdx-1], queue, queueIdx-1);
+            else alert("No hay anterior");
+        } else {
+            dobleClick = setTimeout(() => { reiniciar(); dobleClick = null; }, 250);
+        }
+    }
+    function siguiente() {
+        if (queue.length && queueIdx+1 < queue.length) playAudio(queue[queueIdx+1], queue, queueIdx+1);
+        else alert("No hay siguiente");
+    }
+    
+    // ========== UI ==========
+    let currentTab = 'explore';
+    let searchTerm = '';
+    
+    async function renderCurrentView() {
+        const audios = await obtenerAudios();
+        const playlists = await obtenerPlaylists();
+        const filtrados = searchTerm ? audios.filter(a => a.nombre.toLowerCase().includes(searchTerm.toLowerCase())) : audios;
+        const content = document.getElementById('contentArea');
+        
+        if (currentTab === 'explore') {
+            const visibles = filtrados.filter(a => !a.oculto);
+            content.innerHTML = `<h3>🔊 Explorar</h3><div class="grid" id="grid"></div>`;
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            for (let a of visibles) {
+                const img = await obtenerImagenUrl(a.id);
+                grid.innerHTML += `<div class="audio-card"><img src="${img}"><strong>${a.nombre}</strong>
+                <div class="flex"><button class="play" data-id="${a.id}">▶️</button><button class="report" data-id="${a.id}" style="background:#b91d2c;">🚨</button><button class="addpl" data-id="${a.id}">📂 +PL</button></div></div>`;
+            }
+        } else if (currentTab === 'gallery') {
+            content.innerHTML = `<h3>🖼️ Galería</h3><div class="grid" id="grid"></div>`;
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            for (let a of filtrados) {
+                const img = await obtenerImagenUrl(a.id);
+                grid.innerHTML += `<div class="audio-card ${a.oculto ? 'hidden-audio' : ''}"><img src="${img}"><strong>${a.nombre}</strong>${a.oculto ? '<div class="badge">OCULTO</div>' : ''}
+                <div class="flex"><button class="play" data-id="${a.id}">▶️</button><button class="report" data-id="${a.id}">🚨</button></div></div>`;
+            }
+        } else if (currentTab === 'myAudios') {
+            const mis = filtrados.filter(a => a.creador === MI_ID);
+            content.innerHTML = `<h3>👤 Mis audios</h3><div class="grid" id="grid"></div>`;
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            for (let a of mis) {
+                const img = await obtenerImagenUrl(a.id);
+                grid.innerHTML += `<div class="audio-card"><img src="${img}"><strong>${a.nombre}</strong>
+                <div class="flex"><button class="play" data-id="${a.id}">▶️</button><button class="deleteMy" data-id="${a.id}" style="background:#b91d2c;">🗑️</button></div></div>`;
+            }
+        } else if (currentTab === 'playlists') {
+            content.innerHTML = `<h3>📁 Playlists</h3><div class="flex"><button id="newPl">+ Nueva</button><button id="exportPl">⬇️ Exportar</button><button id="importPl">⬆️ Importar</button></div><div id="pllist"></div>`;
+            const plDiv = document.getElementById('pllist');
+            plDiv.innerHTML = '';
+            for (let pl of playlists) {
+                let html = `<div class="playlist-panel"><strong>📌 ${pl.nombre}</strong> (${pl.audiosIds?.length || 0})<br>`;
+                for (let id of pl.audiosIds || []) {
+                    const a = audios.find(x => x.id === id);
+                    if (a && !a.oculto) {
+                        const img = await obtenerImagenUrl(id);
+                        html += `<span style="display:inline-block;margin:5px"><img src="${img}" width="40" style="border-radius:8px"> ${a.nombre} <button class="playInline" data-id="${id}">▶️</button></span>`;
+                    }
+                }
+                html += `</div>`;
+                plDiv.innerHTML += html;
+            }
+            document.getElementById('newPl')?.addEventListener('click', () => { let n = prompt('Nombre'); if(n) crearPlaylist(n); });
+            document.getElementById('exportPl')?.addEventListener('click', exportarPlaylists);
+            document.getElementById('importPl')?.addEventListener('click', () => { let inp = document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=e=>importarPlaylists(e.target.files[0]); inp.click(); });
+        } else if (currentTab === 'admin') {
+            if (!await checkAdminAuth()) {
+                content.innerHTML = `<div class="denied"><h3>⛔ Acceso denegado</h3><button id="logoutAdm">🔓 Cerrar sesión</button></div>`;
+                document.getElementById('logoutAdm')?.addEventListener('click', logoutAdmin);
+                return;
+            }
+            const pendientes = audios.filter(a => a.pendienteRevision || (a.denuncias >= 50 && a.oculto));
+            content.innerHTML = `<h3>⚙️ Moderación</h3>`;
+            if (!pendientes.length) content.innerHTML += `<p>✅ Sin pendientes</p>`;
+            for (let a of pendientes) {
+                const img = await obtenerImagenUrl(a.id);
+                content.innerHTML += `<div class="admin-panel"><img src="${img}" width="60"> <strong>${a.nombre}</strong> - Denuncias: ${a.denuncias} - Creador: ${a.creador.substring(0,12)}
+                <div class="flex"><button class="restore" data-id="${a.id}">✅ Restaurar</button><button class="deletePerm" data-id="${a.id}" style="background:#b91d2c;">🔥 Borrar</button></div></div>`;
+            }
+            content.innerHTML += `<button id="logoutAdminBtn" class="secondary">🚪 Cerrar sesión</button>`;
+            document.querySelectorAll('.restore').forEach(b => b.addEventListener('click', () => revisionAdmin(Number(b.dataset.id), true)));
+            document.querySelectorAll('.deletePerm').forEach(b => b.addEventListener('click', () => revisionAdmin(Number(b.dataset.id), false)));
+            document.getElementById('logoutAdminBtn')?.addEventListener('click', logoutAdmin);
+        }
+        
+        document.querySelectorAll('.play, .playInline').forEach(b => b.addEventListener('click', () => playAudio(Number(b.dataset.id))));
+        document.querySelectorAll('.report').forEach(b => b.addEventListener('click', async () => { if(confirm("Denunciar?")) await denunciarAudio(Number(b.dataset.id)); }));
+        document.querySelectorAll('.addpl').forEach(b => b.addEventListener('click', async () => {
+            const id = Number(b.dataset.id);
+            const pls = await obtenerPlaylists();
+            const op = pls.map(p => `${p.id}|${p.nombre}`).join(', ');
+            const r = prompt("ID playlist: "+op);
+            if(r) { let pid = parseInt(r.split('|')[0]); if(!isNaN(pid)) agregarAPlaylist(pid, id); }
+        }));
+        document.querySelectorAll('.deleteMy').forEach(b => b.addEventListener('click', () => borrarMiAudio(Number(b.dataset.id))));
+    }
+    
+    document.getElementById('uploadBtn').addEventListener('click', () => {
+        let nom = prompt("Nombre del audio:");
+        if(!nom) return;
+        let audioInp = document.createElement('input'); audioInp.type='file'; audioInp.accept='audio/*';
+        audioInp.onchange = async (e) => {
+            let audioFile = e.target.files[0];
+            if(!audioFile) return;
+            let imgInp = document.createElement('input'); imgInp.type='file'; imgInp.accept='image/*';
+            imgInp.onchange = async (ie) => {
+                await guardarAudio(audioFile, ie.target.files[0], nom);
+                renderCurrentView();
+            };
+            imgInp.click();
+        };
+        audioInp.click();
+    });
+    
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            currentTab = tab.dataset.tab;
+            renderCurrentView();
+        });
+    });
+    document.getElementById('globalSearch').addEventListener('input', (e) => { searchTerm = e.target.value; renderCurrentView(); });
+    
+    document.getElementById('playPauseBtn').onclick = pausaPlay;
+    document.getElementById('speedBtn').onclick = cambiarVelocidad;
+    document.getElementById('forwardBtn').onclick = adelantar;
+    document.getElementById('rewindBtn').onclick = atrasar;
+    document.getElementById('restartBtn').onclick = reiniciar;
+    document.getElementById('reverseBtn').onclick = reversa;
+    document.getElementById('nextBtn').onclick = siguiente;
+    document.getElementById('prevBtn').onclick = anterior;
+    document.getElementById('randomBtn').onclick = aleatorio;
+    
+    document.getElementById('themeToggle').addEventListener('click', () => document.body.classList.toggle('light'));
+    
+    document.getElementById('changePwdBtn').addEventListener('click', async () => {
+        if (!adminAuthorized) { alert("Inicia sesión primero"); return; }
+        let newPwd = prompt("Nueva contraseña (mínimo 4 caracteres):");
+        if (newPwd?.length >= 4) await changePassword(newPwd);
+        else alert("Mínimo 4 caracteres");
+    });
+    
+    openDB().then(() => renderCurrentView());
+</script>
+</body>
+</html>
