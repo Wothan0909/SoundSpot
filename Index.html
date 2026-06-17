@@ -195,6 +195,24 @@
             border-radius: 16px;
             text-align: center;
         }
+        .toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1db954;
+            color: black;
+            padding: 10px 20px;
+            border-radius: 30px;
+            z-index: 2000;
+            font-weight: bold;
+            animation: fadeOut 2s forwards;
+        }
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            70% { opacity: 1; }
+            100% { opacity: 0; visibility: hidden; }
+        }
         @media (max-width: 600px) {
             .grid {
                 grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -293,9 +311,17 @@
         alert("Sesión cerrada");
     }
     
+    function showToast(msg) {
+        let toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.innerText = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
+    }
+    
     // ========== INDEXEDDB ==========
     const DB_NAME = 'SoundSpotDB';
-    const DB_VERSION = 5;
+    const DB_VERSION = 6;
     let db = null;
     const MI_ID = "usuario_" + (localStorage.getItem('userId') || Math.random().toString(36).substr(2, 8));
     localStorage.setItem('userId', MI_ID);
@@ -330,17 +356,37 @@
     async function guardarAudio(audioFile, imageFile, nombre) {
         const audioId = Date.now() + Math.random() * 10000;
         const tx = db.transaction(['audios', 'imagenes', 'audiosBlob'], 'readwrite');
-        tx.objectStore('audios').add({
-            id: audioId, nombre, creador: MI_ID,
-            fecha: new Date().toISOString(), denuncias: 0, oculto: false, pendienteRevision: false
+        
+        await new Promise((resolve, reject) => {
+            const req = tx.objectStore('audios').add({
+                id: audioId, nombre, creador: MI_ID,
+                fecha: new Date().toISOString(), denuncias: 0, oculto: false, pendienteRevision: false
+            });
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
         });
-        if (imageFile) tx.objectStore('imagenes').add({ audioId, blob: imageFile });
-        tx.objectStore('audiosBlob').add({ audioId, blob: audioFile });
+        
+        if (imageFile) {
+            await new Promise((resolve, reject) => {
+                const req = tx.objectStore('imagenes').add({ audioId, blob: imageFile });
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        }
+        
+        await new Promise((resolve, reject) => {
+            const req = tx.objectStore('audiosBlob').add({ audioId, blob: audioFile });
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        });
+        
         await tx.done;
-        renderCurrentView();
+        showToast(`✅ "${nombre}" subido correctamente`);
+        return audioId;
     }
     
     async function obtenerAudios() {
+        if (!db) return [];
         const tx = db.transaction('audios', 'readonly');
         const audios = await new Promise(resolve => {
             const req = tx.objectStore('audios').getAll();
@@ -350,6 +396,7 @@
     }
     
     async function obtenerImagenUrl(audioId) {
+        if (!db) return 'https://picsum.photos/200/200?random=' + audioId;
         const tx = db.transaction('imagenes', 'readonly');
         const record = await new Promise(resolve => {
             const req = tx.objectStore('imagenes').get(audioId);
@@ -360,6 +407,7 @@
     }
     
     async function obtenerAudioUrl(audioId) {
+        if (!db) return null;
         const tx = db.transaction('audiosBlob', 'readonly');
         const record = await new Promise(resolve => {
             const req = tx.objectStore('audiosBlob').get(audioId);
@@ -380,6 +428,7 @@
             audio.denuncias++;
             if (audio.denuncias >= 50) { audio.oculto = true; audio.pendienteRevision = true; }
             store.put(audio);
+            showToast(`🚨 Audio denunciado (${audio.denuncias}/50)`);
         }
         await tx.done;
         renderCurrentView();
@@ -396,23 +445,13 @@
             if (restaurar) {
                 audio.oculto = false; audio.pendienteRevision = false; audio.denuncias = 0;
                 audioStore.put(audio);
+                showToast(`✅ "${audio.nombre}" restaurado`);
             } else {
+                const nombre = audio.nombre;
                 audioStore.delete(audioId);
                 tx.objectStore('imagenes').delete(audioId);
                 tx.objectStore('audiosBlob').delete(audioId);
-                const plTx = db.transaction('playlists', 'readwrite');
-                const plStore = plTx.objectStore('playlists');
-                const playlists = await new Promise(resolve => {
-                    const req = plStore.getAll();
-                    req.onsuccess = () => resolve(req.result || []);
-                });
-                for (let pl of playlists) {
-                    if (pl.audiosIds?.includes(audioId)) {
-                        pl.audiosIds = pl.audiosIds.filter(id => id !== audioId);
-                        plStore.put(pl);
-                    }
-                }
-                await plTx.done;
+                showToast(`🔥 "${nombre}" borrado definitivamente`);
             }
         }
         await tx.done;
@@ -420,11 +459,19 @@
     }
     
     async function borrarMiAudio(audioId) {
-        if (!confirm("¿Borrar permanentemente?")) return;
+        if (!confirm("¿Borrar permanentemente este audio?")) return;
         const tx = db.transaction(['audios', 'imagenes', 'audiosBlob'], 'readwrite');
-        tx.objectStore('audios').delete(audioId);
-        tx.objectStore('imagenes').delete(audioId);
-        tx.objectStore('audiosBlob').delete(audioId);
+        const audioStore = tx.objectStore('audios');
+        const audio = await new Promise(resolve => {
+            const req = audioStore.get(audioId);
+            req.onsuccess = () => resolve(req.result);
+        });
+        if (audio) {
+            audioStore.delete(audioId);
+            tx.objectStore('imagenes').delete(audioId);
+            tx.objectStore('audiosBlob').delete(audioId);
+            showToast(`🗑️ "${audio.nombre}" eliminado`);
+        }
         await tx.done;
         renderCurrentView();
     }
@@ -434,10 +481,12 @@
         const tx = db.transaction('playlists', 'readwrite');
         tx.objectStore('playlists').add({ id: Date.now(), nombre, audiosIds: [] });
         await tx.done;
+        showToast(`📁 Playlist "${nombre}" creada`);
         renderCurrentView();
     }
     
     async function obtenerPlaylists() {
+        if (!db) return [];
         const tx = db.transaction('playlists', 'readonly');
         return await new Promise(resolve => {
             const req = tx.objectStore('playlists').getAll();
@@ -455,6 +504,9 @@
         if (pl && !pl.audiosIds.includes(audioId)) {
             pl.audiosIds.push(audioId);
             store.put(pl);
+            showToast(`➕ Audio añadido a "${pl.nombre}"`);
+        } else if (pl) {
+            showToast(`⚠️ El audio ya está en esta playlist`);
         }
         await tx.done;
         renderCurrentView();
@@ -468,6 +520,7 @@
         a.download = 'soundspot_playlists.json';
         a.click();
         URL.revokeObjectURL(a.href);
+        showToast(`⬇️ Playlists exportadas`);
     }
     
     async function importarPlaylists(file) {
@@ -481,6 +534,7 @@
             store.put(pl);
         }
         await tx.done;
+        showToast(`⬆️ Playlists importadas`);
         renderCurrentView();
     }
     
@@ -493,11 +547,12 @@
     async function playAudio(id, queueArr = null, idx = -1) {
         if (currentAudio) { currentAudio.pause(); currentAudio.src = ''; }
         const url = await obtenerAudioUrl(id);
-        if (!url) return;
+        if (!url) { showToast("❌ No se puede reproducir el audio"); return; }
         currentAudio = new Audio(url);
         currentId = id;
         if (queueArr) { queue = queueArr; queueIdx = idx; }
-        const nombre = (await obtenerAudios()).find(a => a.id === id)?.nombre || 'audio';
+        const audios = await obtenerAudios();
+        const nombre = audios.find(a => a.id === id)?.nombre || 'audio';
         document.getElementById('nowPlayingText').innerText = `🎵 ${nombre}`;
         currentAudio.play();
         document.getElementById('playPauseBtn').innerHTML = '⏸️ Pausa';
@@ -520,12 +575,12 @@
     function adelantar() { if(currentAudio) currentAudio.currentTime += 10; }
     function atrasar() { if(currentAudio) currentAudio.currentTime -= 10; }
     function reiniciar() { if(currentAudio) currentAudio.currentTime = 0; }
-    function reversa() { alert("Modo reversa no soportado nativamente"); }
+    function reversa() { showToast("🔄 Modo reversa no soportado nativamente"); }
     async function aleatorio() {
         const audios = await obtenerAudios();
         const disponibles = audios.filter(a => !a.oculto);
         if (disponibles.length) playAudio(disponibles[Math.floor(Math.random() * disponibles.length)].id);
-        else alert("No hay audios");
+        else showToast("❌ No hay audios disponibles");
     }
     let dobleClick = null;
     function anterior() {
@@ -533,14 +588,14 @@
             clearTimeout(dobleClick);
             dobleClick = null;
             if (queue.length && queueIdx-1 >= 0) playAudio(queue[queueIdx-1], queue, queueIdx-1);
-            else alert("No hay anterior");
+            else showToast("⏪ No hay anterior");
         } else {
             dobleClick = setTimeout(() => { reiniciar(); dobleClick = null; }, 250);
         }
     }
     function siguiente() {
         if (queue.length && queueIdx+1 < queue.length) playAudio(queue[queueIdx+1], queue, queueIdx+1);
-        else alert("No hay siguiente");
+        else showToast("⏩ No hay siguiente");
     }
     
     // ========== UI ==========
@@ -555,7 +610,7 @@
         
         if (currentTab === 'explore') {
             const visibles = filtrados.filter(a => !a.oculto);
-            content.innerHTML = `<h3>🔊 Explorar</h3><div class="grid" id="grid"></div>`;
+            content.innerHTML = `<h3>🔊 Explorar (${visibles.length} audios)</h3><div class="grid" id="grid"></div>`;
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
             for (let a of visibles) {
@@ -563,8 +618,9 @@
                 grid.innerHTML += `<div class="audio-card"><img src="${img}"><strong>${a.nombre}</strong>
                 <div class="flex"><button class="play" data-id="${a.id}">▶️</button><button class="report" data-id="${a.id}" style="background:#b91d2c;">🚨</button><button class="addpl" data-id="${a.id}">📂 +PL</button></div></div>`;
             }
+            if (visibles.length === 0) grid.innerHTML = '<p style="text-align:center">No hay audios. ¡Sube uno!</p>';
         } else if (currentTab === 'gallery') {
-            content.innerHTML = `<h3>🖼️ Galería</h3><div class="grid" id="grid"></div>`;
+            content.innerHTML = `<h3>🖼️ Galería (${filtrados.length} audios)</h3><div class="grid" id="grid"></div>`;
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
             for (let a of filtrados) {
@@ -574,7 +630,7 @@
             }
         } else if (currentTab === 'myAudios') {
             const mis = filtrados.filter(a => a.creador === MI_ID);
-            content.innerHTML = `<h3>👤 Mis audios</h3><div class="grid" id="grid"></div>`;
+            content.innerHTML = `<h3>👤 Mis audios (${mis.length} subidos)</h3><div class="grid" id="grid"></div>`;
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
             for (let a of mis) {
@@ -582,12 +638,13 @@
                 grid.innerHTML += `<div class="audio-card"><img src="${img}"><strong>${a.nombre}</strong>
                 <div class="flex"><button class="play" data-id="${a.id}">▶️</button><button class="deleteMy" data-id="${a.id}" style="background:#b91d2c;">🗑️</button></div></div>`;
             }
+            if (mis.length === 0) grid.innerHTML = '<p style="text-align:center">No has subido audios aún.</p>';
         } else if (currentTab === 'playlists') {
             content.innerHTML = `<h3>📁 Playlists</h3><div class="flex"><button id="newPl">+ Nueva</button><button id="exportPl">⬇️ Exportar</button><button id="importPl">⬆️ Importar</button></div><div id="pllist"></div>`;
             const plDiv = document.getElementById('pllist');
             plDiv.innerHTML = '';
             for (let pl of playlists) {
-                let html = `<div class="playlist-panel"><strong>📌 ${pl.nombre}</strong> (${pl.audiosIds?.length || 0})<br>`;
+                let html = `<div class="playlist-panel"><strong>📌 ${pl.nombre}</strong> (${pl.audiosIds?.length || 0} audios)<br>`;
                 for (let id of pl.audiosIds || []) {
                     const a = audios.find(x => x.id === id);
                     if (a && !a.oculto) {
@@ -598,51 +655,55 @@
                 html += `</div>`;
                 plDiv.innerHTML += html;
             }
-            document.getElementById('newPl')?.addEventListener('click', () => { let n = prompt('Nombre'); if(n) crearPlaylist(n); });
+            if (playlists.length === 0) plDiv.innerHTML = '<p>No hay playlists. Crea una nueva.</p>';
+            document.getElementById('newPl')?.addEventListener('click', () => { let n = prompt('Nombre de la playlist:'); if(n) crearPlaylist(n); });
             document.getElementById('exportPl')?.addEventListener('click', exportarPlaylists);
             document.getElementById('importPl')?.addEventListener('click', () => { let inp = document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=e=>importarPlaylists(e.target.files[0]); inp.click(); });
         } else if (currentTab === 'admin') {
             if (!await checkAdminAuth()) {
-                content.innerHTML = `<div class="denied"><h3>⛔ Acceso denegado</h3><button id="logoutAdm">🔓 Cerrar sesión</button></div>`;
+                content.innerHTML = `<div class="denied"><h3>⛔ Acceso denegado</h3><button id="logoutAdm" class="secondary">🔓 Cerrar sesión</button></div>`;
                 document.getElementById('logoutAdm')?.addEventListener('click', logoutAdmin);
                 return;
             }
             const pendientes = audios.filter(a => a.pendienteRevision || (a.denuncias >= 50 && a.oculto));
-            content.innerHTML = `<h3>⚙️ Moderación</h3>`;
-            if (!pendientes.length) content.innerHTML += `<p>✅ Sin pendientes</p>`;
+            content.innerHTML = `<h3>⚙️ Moderación (${pendientes.length} pendientes)</h3>`;
+            if (pendientes.length === 0) content.innerHTML += `<p>✅ No hay audios pendientes de revisión.</p>`;
             for (let a of pendientes) {
                 const img = await obtenerImagenUrl(a.id);
                 content.innerHTML += `<div class="admin-panel"><img src="${img}" width="60"> <strong>${a.nombre}</strong> - Denuncias: ${a.denuncias} - Creador: ${a.creador.substring(0,12)}
                 <div class="flex"><button class="restore" data-id="${a.id}">✅ Restaurar</button><button class="deletePerm" data-id="${a.id}" style="background:#b91d2c;">🔥 Borrar</button></div></div>`;
             }
-            content.innerHTML += `<button id="logoutAdminBtn" class="secondary">🚪 Cerrar sesión</button>`;
+            content.innerHTML += `<button id="logoutAdminBtn" class="secondary" style="margin-top:20px;">🚪 Cerrar sesión de administrador</button>`;
             document.querySelectorAll('.restore').forEach(b => b.addEventListener('click', () => revisionAdmin(Number(b.dataset.id), true)));
             document.querySelectorAll('.deletePerm').forEach(b => b.addEventListener('click', () => revisionAdmin(Number(b.dataset.id), false)));
             document.getElementById('logoutAdminBtn')?.addEventListener('click', logoutAdmin);
         }
         
         document.querySelectorAll('.play, .playInline').forEach(b => b.addEventListener('click', () => playAudio(Number(b.dataset.id))));
-        document.querySelectorAll('.report').forEach(b => b.addEventListener('click', async () => { if(confirm("Denunciar?")) await denunciarAudio(Number(b.dataset.id)); }));
+        document.querySelectorAll('.report').forEach(b => b.addEventListener('click', async () => { if(confirm("¿Denunciar este audio?")) await denunciarAudio(Number(b.dataset.id)); }));
         document.querySelectorAll('.addpl').forEach(b => b.addEventListener('click', async () => {
             const id = Number(b.dataset.id);
             const pls = await obtenerPlaylists();
+            if (pls.length === 0) { showToast("❌ Crea una playlist primero"); return; }
             const op = pls.map(p => `${p.id}|${p.nombre}`).join(', ');
-            const r = prompt("ID playlist: "+op);
+            const r = prompt("ID de playlist:\n" + op);
             if(r) { let pid = parseInt(r.split('|')[0]); if(!isNaN(pid)) agregarAPlaylist(pid, id); }
         }));
         document.querySelectorAll('.deleteMy').forEach(b => b.addEventListener('click', () => borrarMiAudio(Number(b.dataset.id))));
     }
     
+    // Subir audio
     document.getElementById('uploadBtn').addEventListener('click', () => {
         let nom = prompt("Nombre del audio:");
-        if(!nom) return;
+        if(!nom || nom.trim() === "") { alert("Nombre requerido"); return; }
         let audioInp = document.createElement('input'); audioInp.type='file'; audioInp.accept='audio/*';
         audioInp.onchange = async (e) => {
             let audioFile = e.target.files[0];
             if(!audioFile) return;
             let imgInp = document.createElement('input'); imgInp.type='file'; imgInp.accept='image/*';
             imgInp.onchange = async (ie) => {
-                await guardarAudio(audioFile, ie.target.files[0], nom);
+                let imgFile = ie.target.files[0];
+                await guardarAudio(audioFile, imgFile, nom.trim());
                 renderCurrentView();
             };
             imgInp.click();
@@ -650,6 +711,7 @@
         audioInp.click();
     });
     
+    // Tabs
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -660,6 +722,7 @@
     });
     document.getElementById('globalSearch').addEventListener('input', (e) => { searchTerm = e.target.value; renderCurrentView(); });
     
+    // Reproductor botones
     document.getElementById('playPauseBtn').onclick = pausaPlay;
     document.getElementById('speedBtn').onclick = cambiarVelocidad;
     document.getElementById('forwardBtn').onclick = adelantar;
@@ -670,16 +733,22 @@
     document.getElementById('prevBtn').onclick = anterior;
     document.getElementById('randomBtn').onclick = aleatorio;
     
+    // Tema oscuro/claro
     document.getElementById('themeToggle').addEventListener('click', () => document.body.classList.toggle('light'));
     
+    // Cambiar contraseña
     document.getElementById('changePwdBtn').addEventListener('click', async () => {
-        if (!adminAuthorized) { alert("Inicia sesión primero"); return; }
+        if (!adminAuthorized) { alert("Inicia sesión como administrador primero"); return; }
         let newPwd = prompt("Nueva contraseña (mínimo 4 caracteres):");
-        if (newPwd?.length >= 4) await changePassword(newPwd);
+        if (newPwd && newPwd.length >= 4) await changePassword(newPwd);
         else alert("Mínimo 4 caracteres");
     });
     
-    openDB().then(() => renderCurrentView());
+    // Iniciar
+    openDB().then(() => {
+        renderCurrentView();
+        showToast("🎧 SoundSpot listo - Contraseña admin: admin123");
+    });
 </script>
 </body>
 </html>
